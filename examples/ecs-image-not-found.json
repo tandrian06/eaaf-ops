@@ -1,0 +1,13 @@
+{
+  "service": "example-web",
+  "events": [
+    {
+      "id": "event-1",
+      "message": "Service example-web has started 1 task."
+    },
+    {
+      "id": "event-2",
+      "message": "Service example-web was unable to place a task. Reason: CannotPullContainerError: failed to resolve ref public.ecr.aws/example/web:missing: not found."
+    }
+  ]
+}
