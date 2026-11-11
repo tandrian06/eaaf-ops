@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from .aws import collect_incident
 from .incident import diagnose, normalize_export
 
 
@@ -52,25 +53,41 @@ def gateway_completion(report, model, base_url, key):
 
 def main():
     parser = argparse.ArgumentParser(description="Diagnose a captured ECS incident.")
-    parser.add_argument("incident", type=Path, help="JSON file with a service name and ECS events")
+    parser.add_argument("incident", type=Path, nargs="?", help="JSON file with a service name and ECS events")
     parser.add_argument("--service", help="Service name when the AWS export contains multiple services")
     parser.add_argument("--tasks", type=Path, help="Optional AWS ECS describe-tasks JSON export")
+    parser.add_argument("--aws-cluster", help="Collect from this ECS cluster using AWS CLI")
+    parser.add_argument("--region", help="AWS region for live collection")
+    parser.add_argument("--profile", help="AWS CLI profile for live collection")
     parser.add_argument("--model", help="Model alias for an optional explanation through EAAF Core")
     args = parser.parse_args()
+    if args.aws_cluster:
+        if args.incident or args.tasks or not args.service:
+            parser.error("--aws-cluster requires --service and cannot be combined with input files.")
+    elif not args.incident or args.region or args.profile:
+        parser.error("Provide an incident file or --aws-cluster with --service.")
+
     try:
-        with args.incident.open(encoding="utf-8-sig") as source:
-            incident = json.load(source)
-        if isinstance(incident, dict) and "services" in incident:
-            task_export = None
-            if args.tasks:
-                with args.tasks.open(encoding="utf-8-sig") as source:
-                    task_export = json.load(source)
-                if not isinstance(task_export, dict):
-                    raise ValueError("Expected a describe-tasks JSON object.")
-            incident = normalize_export(incident, args.service, task_export)
-        elif args.service or args.tasks:
-            raise ValueError("--service and --tasks require a describe-services export.")
+        if args.aws_cluster:
+            incident = collect_incident(
+                args.aws_cluster, args.service, region=args.region, profile=args.profile,
+            )
+        else:
+            with args.incident.open(encoding="utf-8-sig") as source:
+                incident = json.load(source)
+            if isinstance(incident, dict) and "services" in incident:
+                task_export = None
+                if args.tasks:
+                    with args.tasks.open(encoding="utf-8-sig") as source:
+                        task_export = json.load(source)
+                    if not isinstance(task_export, dict):
+                        raise ValueError("Expected a describe-tasks JSON object.")
+                incident = normalize_export(incident, args.service, task_export)
+            elif args.service or args.tasks:
+                raise ValueError("--service and --tasks require a describe-services export.")
         report = diagnose(incident)
+        if args.aws_cluster and incident.get("collection_notes"):
+            report["collection_notes"] = incident["collection_notes"]
         if args.model:
             key = os.getenv("EAAF_OPS_API_KEY")
             if not key:
