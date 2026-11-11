@@ -2,6 +2,18 @@
 
 Replay an ECS incident from a captured event file. The CLI reports a probable cause, supporting event IDs and messages, and the next check. The first increment recognizes the image-not-found failure observed in the EAAF deployment demo. The example replaces the real infrastructure identifiers with fictional values.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Capture["Saved ECS exports"] --> CLI["EAAF Ops CLI"]
+    ECS["AWS ECS"] -->|"Read-only AWS CLI profile"| CLI
+    CLI --> Report["Finding, evidence, and next check"]
+    CLI -->|"Optional explanation"| Core["EAAF Core Gateway"]
+```
+
+The live collection path was verified against the ECS deployment demo. Saved examples cover the image pull and out-of-memory failures.
+
 ## Try it locally
 
 From this repository with Python 3.14:
