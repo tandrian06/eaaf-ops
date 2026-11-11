@@ -1,55 +1,18 @@
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from .incident import diagnose, normalize_export
+
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, newurl):
         return None
-
-
-def diagnose(incident):
-    if not isinstance(incident, dict) or not isinstance(incident.get("service"), str) or not incident["service"].strip():
-        raise ValueError("Expected a nonempty service name.")
-    events = incident.get("events")
-    if not isinstance(events, list) or not 1 <= len(events) <= 50:
-        raise ValueError("Expected between 1 and 50 events.")
-    evidence = []
-    seen = set()
-    for event in events:
-        if not isinstance(event, dict):
-            raise ValueError("Each event must be an object.")
-        event_id = event.get("id")
-        message = event.get("message")
-        if not isinstance(event_id, str) or not event_id.strip() or event_id in seen:
-            raise ValueError("Each event needs a unique, nonempty ID.")
-        if not isinstance(message, str) or not message.strip() or len(message) > 2000:
-            raise ValueError("Each event needs a message of up to 2,000 characters.")
-        seen.add(event_id)
-        if "CannotPullContainerError" in message and re.search(r"not found|manifest unknown", message, re.I):
-            evidence.append({"id": event_id, "message": message})
-
-    if evidence:
-        return {
-            "service": incident["service"],
-            "finding": "container_image_not_found",
-            "probable_cause": "ECS could not start the task because the registry could not resolve the configured container image.",
-            "evidence": evidence,
-            "next_check": "Compare the image URI and tag in the ECS task definition with a manifest in the registry.",
-        }
-    return {
-        "service": incident["service"],
-        "finding": "insufficient_evidence",
-        "probable_cause": None,
-        "evidence": [],
-        "next_check": "Collect the ECS service events and the stopped task reason for the incident window.",
-    }
 
 
 def gateway_completion(report, model, base_url, key):
@@ -90,11 +53,24 @@ def gateway_completion(report, model, base_url, key):
 def main():
     parser = argparse.ArgumentParser(description="Diagnose a captured ECS incident.")
     parser.add_argument("incident", type=Path, help="JSON file with a service name and ECS events")
+    parser.add_argument("--service", help="Service name when the AWS export contains multiple services")
+    parser.add_argument("--tasks", type=Path, help="Optional AWS ECS describe-tasks JSON export")
     parser.add_argument("--model", help="Model alias for an optional explanation through EAAF Core")
     args = parser.parse_args()
     try:
         with args.incident.open(encoding="utf-8-sig") as source:
-            report = diagnose(json.load(source))
+            incident = json.load(source)
+        if isinstance(incident, dict) and "services" in incident:
+            task_export = None
+            if args.tasks:
+                with args.tasks.open(encoding="utf-8-sig") as source:
+                    task_export = json.load(source)
+                if not isinstance(task_export, dict):
+                    raise ValueError("Expected a describe-tasks JSON object.")
+            incident = normalize_export(incident, args.service, task_export)
+        elif args.service or args.tasks:
+            raise ValueError("--service and --tasks require a describe-services export.")
+        report = diagnose(incident)
         if args.model:
             key = os.getenv("EAAF_OPS_API_KEY")
             if not key:

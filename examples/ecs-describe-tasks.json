@@ -1,0 +1,19 @@
+{
+  "tasks": [
+    {
+      "taskArn": "arn:aws:ecs:eu-north-1:123456789012:task/example/00000000000000000000000000000001",
+      "clusterArn": "arn:aws:ecs:eu-north-1:123456789012:cluster/example",
+      "group": "service:example-web",
+      "lastStatus": "STOPPED",
+      "stoppedReason": "Essential container in task exited",
+      "containers": [
+        {
+          "name": "web",
+          "exitCode": 137,
+          "reason": "OutOfMemoryError: Container killed due to memory usage"
+        }
+      ]
+    }
+  ],
+  "failures": []
+}

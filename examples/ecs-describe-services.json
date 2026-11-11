@@ -1,0 +1,15 @@
+{
+  "services": [
+    {
+      "serviceName": "example-web",
+      "clusterArn": "arn:aws:ecs:eu-north-1:123456789012:cluster/example",
+      "events": [
+        {
+          "id": "event-1",
+          "message": "Service example-web has started 1 task."
+        }
+      ]
+    }
+  ],
+  "failures": []
+}
